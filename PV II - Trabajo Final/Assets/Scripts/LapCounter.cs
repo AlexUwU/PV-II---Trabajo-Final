@@ -6,17 +6,25 @@ using TMPro;
 
 public class LapCounter : NetworkBehaviour
 {
-    public TextMeshProUGUI lapCountText;
+    public TextMeshProUGUI lapCountTextPrefab;
+    public Transform textSpawnParent;
     public int totalLaps = 3;
 
     public Checkpoint[] checkpoints;
     private int currentCheckpointIndex = 0;
 
+    private Dictionary<ulong, TextMeshProUGUI> lapTextPerPlayer = new Dictionary<ulong, TextMeshProUGUI>();
     private Dictionary<ulong, int> lapsPerPlayer = new Dictionary<ulong, int>();
 
     private void Start()
     {
-        UpdateLapText(0, totalLaps);
+        if (IsServer)
+        {
+            foreach (var playerID in NetworkManager.Singleton.ConnectedClients.Keys)
+            {
+                InitializeLapCount(playerID);
+            }
+        }
     }
 
     public int GetCurrentCheckpointIndex()
@@ -31,18 +39,28 @@ public class LapCounter : NetworkBehaviour
     private void InitializeLapCount(ulong playerID)
     {
         lapsPerPlayer[playerID] = 0;
+
+        TextMeshProUGUI lapText = Instantiate(lapCountTextPrefab, textSpawnParent);
+        lapTextPerPlayer[playerID] = lapText;
+
+        lapText.transform.SetParent(textSpawnParent);
+
+        NetworkObject networkObject = lapText.GetComponent<NetworkObject>();
+        networkObject.SpawnWithOwnership(playerID);
+
+        UpdateLapText(playerID);
     }
 
     public void IncrementLapCount(ulong playerID)
     {
-        if (lapsPerPlayer.ContainsKey(playerID) && currentCheckpointIndex == checkpoints.Length)
+        if (lapsPerPlayer.ContainsKey(playerID) && currentCheckpointIndex >= checkpoints.Length)
         {
             lapsPerPlayer[playerID]++;
-            UpdateLapText(lapsPerPlayer[playerID], totalLaps);
+            UpdateLapText(playerID);
 
             if (lapsPerPlayer[playerID] >= totalLaps)
             {
-                PlayerNetworkBehaviour player = NetworkManager.Singleton.ConnectedClients[playerID-1].PlayerObject.GetComponent<PlayerNetworkBehaviour>();
+                PlayerNetworkBehaviour player = NetworkManager.Singleton.ConnectedClients[playerID].PlayerObject.GetComponent<PlayerNetworkBehaviour>();
                 if (player != null)
                 {
                     player.EndGame();
@@ -55,9 +73,11 @@ public class LapCounter : NetworkBehaviour
         }
     }
 
-    private void UpdateLapText(int currentLaps, int totalLaps)
+    private void UpdateLapText(ulong playerID)
     {
-        lapCountText.text = string.Format("Lap: {0}/{1}", currentLaps, totalLaps);
+        int currentLaps = lapsPerPlayer[playerID];
+        TextMeshProUGUI lapText = lapTextPerPlayer[playerID];
+        lapText.text = string.Format("Lap: {0}/{1}", currentLaps, totalLaps);
     }
 
     private void OnTriggerEnter(Collider other)
@@ -67,7 +87,7 @@ public class LapCounter : NetworkBehaviour
             NetworkObject networkObject = other.GetComponent<NetworkObject>();
             if (networkObject != null)
             {
-                ulong playerID = (uint)networkObject.NetworkObjectId;
+                ulong playerID = networkObject.OwnerClientId;
                 if (!lapsPerPlayer.ContainsKey(playerID))
                 {
                     InitializeLapCount(playerID);

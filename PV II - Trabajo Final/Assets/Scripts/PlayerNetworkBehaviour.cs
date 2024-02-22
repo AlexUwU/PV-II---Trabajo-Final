@@ -51,6 +51,5 @@ public class PlayerNetworkBehaviour : NetworkBehaviour
     public void EndGame()
     {
         Debug.Log("Fin");
-        Time.timeScale = 0;
     }
 }
